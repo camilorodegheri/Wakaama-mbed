@@ -15,6 +15,8 @@ extern "C" {
 #include "EthernetInterface.h"
 #include "UDPSocket.h"
 
+#include "SWUpdate.h"
+
 DigitalOut led1(LED1);
 DigitalOut led2(LED2);
 DigitalOut led3(LED3);
@@ -32,7 +34,19 @@ UDPSocket udp;
 
 extern "C" {
     extern lwm2m_object_t * get_object_device();
+    extern lwm2m_object_t * get_object_firmware();
 }
+
+typedef struct
+{
+    char package_url[400];
+    uint8_t state;
+    uint8_t supported;
+    uint8_t result;
+    void (* updatefw_function) (lwm2m_object_t *);
+} firmware_data_t;
+
+LocalFileSystem local("local");               // Create the local filesystem under the name "local"
 
 int Init()
 {
@@ -77,6 +91,38 @@ static uint8_t prv_buffer_send(void * sessionH,
 }
 
 
+void update(lwm2m_object_t* obj) {
+    fprintf(stdout, "*** EXEC FW UPDATE *** \n");
+
+    char* package_url = ((firmware_data_t *) (obj->userData) )->package_url;
+
+    fprintf(stdout, "*** PACKAGE URL *** %s \n", package_url);
+    char file[200];
+    char rootUrl[200];
+    memset(file, '\0', 200);
+    memset(rootUrl, '\0', 200);
+    
+    // Split URL in two bits: root path, and software package root filename
+    if(strlen(package_url) > 0) {
+        for(int i = strlen(package_url) ; i > 0 ; i--) {
+            if(package_url[i-1] == '/') {
+                strncpy(file, & package_url[i], strlen(& package_url[i]));
+                memcpy(rootUrl, package_url, i-1);
+                rootUrl[i] = '\0';
+                
+                fprintf(stdout, "[[ %s --- %s ]] \n", rootUrl, file);
+
+                if(strlen(file) > 0) {
+                    if (SWUP_OK == SoftwareUpdate(rootUrl, file));
+                }
+
+                break;
+            }
+        }
+    }
+    
+}
+
 
 int main() 
 {
@@ -98,8 +144,20 @@ int main()
         return -1;
     }
 
+    objArray[1] = get_object_firmware();
+    ((firmware_data_t*)objArray[1]->userData)->updatefw_function = update;
 
-    lwm2mH = lwm2m_init("myfreakingmbed", 1, objArray, prv_buffer_send, NULL);
+    fprintf(stdout, "update: %p, userdata: %p \r\n", update, ((firmware_data_t*)objArray[1]->userData)->updatefw_function);
+
+    
+        if (NULL == objArray[1])
+    {
+        fprintf(stderr, "Failed to create Firmware object\r\n");
+        return -1;
+    }
+
+
+    lwm2mH = lwm2m_init("myfreakingmbed", 2, objArray, prv_buffer_send, NULL);
     if (NULL == lwm2mH)
     {
         fprintf(stderr, "lwm2m_init() failed\r\n");
@@ -107,7 +165,8 @@ int main()
     }
     
     Endpoint server;
-    server.set_address("54.228.25.31",5683);
+//    server.set_address("54.228.25.31",5683);
+    server.set_address("5.39.83.206",5683);
 
     memset(&security, 0, sizeof(lwm2m_security_t));
 

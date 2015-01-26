@@ -89,6 +89,7 @@ void lwm2m_free(void *p);
 #define COAP_503_SERVICE_UNAVAILABLE    (uint8_t)0xA3
 
 
+
 /*
  * Utility functions for sorted linked list
  */
