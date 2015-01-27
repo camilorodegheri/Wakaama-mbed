@@ -61,8 +61,14 @@
 #include <ctype.h>
 
 
-#define PRV_MANUFACTURER      "Open Mobile Alliance"
-#define PRV_MODEL_NUMBER      "Lightweight M2M Client"
+#define PRV_MANUFACTURER      "NXP"
+#ifdef WITH_MQTT
+#define PRV_MODEL_NUMBER      "LPC1768 - GREENHOUSE REMOTE"
+#elif BLINK
+#define PRV_MODEL_NUMBER      "LPC1768 - BLINK!"
+#else
+#define PRV_MODEL_NUMBER      "LPC1768"
+#endif
 #define PRV_SERIAL_NUMBER     "345000123"
 #define PRV_FIRMWARE_VERSION  "1.0"
 #define PRV_POWER_SOURCE_1    1

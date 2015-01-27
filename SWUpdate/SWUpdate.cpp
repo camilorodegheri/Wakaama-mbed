@@ -183,7 +183,7 @@ SWUpdate_T SoftwareUpdate(const char *url, const char * name, Reboot_T action)
             INFO("        web version: %d", latest_ver);
             INFO("           checksum: %d", cksum);
             INFO("          file size: %d", fsize);
-            if (inst_ver != latest_ver) {
+            if (true || inst_ver != latest_ver) {  // HACK benj remove version checking for demo purposes
                 INFO("  Downloading firmware ver %d ...", latest_ver);
                 sprintf(fwfn, "/local/%s%02d.BIN", nameroot, (latest_ver % 100));
                 snprintf(fqurl, 150, "%s/%s.bin", url, name);

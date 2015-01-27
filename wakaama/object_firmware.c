@@ -217,10 +217,11 @@ static uint8_t prv_firmware_execute(uint16_t instanceId,
         if (data->state == 1)
         {
             fprintf(stdout, "\n\t FIRMWARE UPDATE\r\n\n");
+            data->state = 2;
             // trigger your firmware download and update logic
             data->updatefw_function(objectP);
             fprintf(stdout, "\n\t POST FIRMWARE UPDATE\r\n\n");
-            data->state = 2;
+            data->state = 1;
             return COAP_204_CHANGED;
         } else {
             // firmware update already running

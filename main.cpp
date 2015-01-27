@@ -17,10 +17,26 @@ extern "C" {
 
 #include "SWUpdate.h"
 
-DigitalOut led1(LED1);
-DigitalOut led2(LED2);
-DigitalOut led3(LED3);
-DigitalOut led4(LED4);
+#ifdef WITH_MQTT
+#include "MQTTEthernet.h"
+#include "MQTTClient.h"
+#endif
+
+PwmOut r (p23);
+PwmOut g (p24);
+PwmOut b (p25);
+
+void led_thread(void const *args) {
+   while(1) {
+       for(float i = 0.0; i < 1.0 ; i += 0.001) {
+        float p = 3 * i;
+        r = 1.0 - ((p < 1.0) ? 1.0 - p : (p > 2.0) ? p - 2.0 : 0.0);
+        g = 1.0 - ((p < 1.0) ? p : (p > 2.0) ? 0.0 : 2.0 - p);
+        b = 1.0 - ((p < 1.0) ? 0.0 : (p > 2.0) ? 3.0 - p : p - 1.0);  ;  
+        Thread::wait(1);
+      }
+   }
+}
 
 //ETHERNET
 #define ECHO_SERVER_PORT   2000
@@ -31,6 +47,7 @@ DigitalOut led4(LED4);
 EthernetInterface eth;
 
 UDPSocket udp;
+
 
 extern "C" {
     extern lwm2m_object_t * get_object_device();
@@ -50,10 +67,9 @@ LocalFileSystem local("local");               // Create the local filesystem und
 
 int Init()
 {
-    led1 = 0;
-    led2 = 0;
-    led3 = 0;
-    led4 = 0;
+    r.period(0.001);
+
+    r = 1 ; g = 1 ; b = 1 ;
 
 
     // ETHERNET
@@ -123,13 +139,96 @@ void update(lwm2m_object_t* obj) {
     
 }
 
+DigitalIn push_on(p12);
+DigitalIn push_off(p15);
+
+#ifdef WITH_MQTT
+MQTT::Message message;
+MQTTEthernet ipstack = MQTTEthernet(eth);
+MQTT::Client<MQTTEthernet, Countdown> mqttClient = MQTT::Client<MQTTEthernet, Countdown>(ipstack);
+
+#include "C12832.h"
+C12832 lcd(p5, p7, p6, p8, p11);
+
+void messageArrived(MQTT::MessageData& md)
+{
+    lcd.cls();
+    lcd.locate(0,3);
+    lcd.puts("Temperature:");
+
+
+    MQTT::Message &message = md.message;
+    printf("Message arrived: qos %d, retained %d, dup %d, packetid %d\n", message.qos, message.retained, message.dup, message.id);
+    printf("Payload %.*s\n", message.payloadlen, (char*)message.payload);
+
+    lcd.locate(0,15);
+    lcd.puts((char*)message.payload);
+
+}
+
+void pollButtons(void const *args) {
+    while(1) {
+        char buf[10];
+        memset(buf, '\0', 10);
+        char* topic = "javaonedemo/eclipse-greenhouse-ben/actuators/light";
+
+        if(push_on) {
+            strcpy(buf, "on");
+        } else if (push_off) {
+            strcpy(buf, "off");
+        }
+
+        if(buf[0] != '\0') {
+            message.qos = MQTT::QOS0;
+            message.retained = false;
+            message.dup = false;
+            message.payload = (void*)buf;
+            message.payloadlen = strlen(buf);
+        //    printf("Publishing %s --> %s", topic, buf);
+            mqttClient.publish(topic, message);
+        }
+        Thread::wait(10);
+        mqttClient.yield(20);
+    }
+}
+#endif
+
 
 int main() 
 {
+    #ifdef BLINK
+    Thread thread(led_thread);
+    #endif 
 
     Init();
 
-    printf("Hello\n");
+
+    #ifdef WITH_MQTT
+    char* topic = "javaonedemo/eclipse-greenhouse-ben/sensors/temperature";
+
+    char* hostname = "iot.eclipse.org";
+    int port = 1883;
+
+    printf("Connecting to %s:%d\n", hostname, port);
+    
+    int rc = ipstack.connect(hostname, port);
+    if (rc != 0)
+        printf("rc from TCP connect is %d\n", rc);
+ 
+    MQTTPacket_connectData data = MQTTPacket_connectData_initializer;       
+    data.MQTTVersion = 3;
+    data.clientID.cstring = "mbedsamplebenjamin";
+    if ((rc = mqttClient.connect(data)) != 0)
+        printf("rc from MQTT connect is %d\n", rc);
+    
+    if ((rc = mqttClient.subscribe(topic, MQTT::QOS1, messageArrived)) != 0)
+        printf("rc from MQTT subscribe is %d\n", rc);
+
+    Thread thread_mqtt(pollButtons);
+
+    #endif
+
+
     Endpoint client;
     char buffer[1024];
     lwm2m_context_t * lwm2mH = NULL;
@@ -166,7 +265,7 @@ int main()
     
     Endpoint server;
 //    server.set_address("54.228.25.31",5683);
-    server.set_address("5.39.83.206",5683);
+    server.set_address("5.39.83.206",5683); // leshan.eclipse.org
 
     memset(&security, 0, sizeof(lwm2m_security_t));
 
@@ -192,9 +291,11 @@ int main()
         result = lwm2m_step(lwm2mH, &tv);
 
         int n = udp.receiveFrom(client, buffer, sizeof(buffer));
-        printf("Received packet from: %s of size %d\n", client.get_address(), n);
         if (n>0) {
+            printf("Received packet from: %s of size %d\n", client.get_address(), n);
             lwm2m_handle_packet(lwm2mH, (uint8_t*)buffer, n, (void*) &server);
         }
+
+        udp.sendTo(server, (char *)" ", 1);
     }
 }
